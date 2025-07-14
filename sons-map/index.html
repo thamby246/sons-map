@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Sons of the Forest Map</title>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+  <style>
+    #map { width: 100%; height: 100vh; margin: 0; padding: 0; }
+    html, body { height: 100%; margin: 0; }
+    #controls {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      z-index: 1000;
+      background: rgba(255, 255, 255, 0.9);
+      padding: 6px 12px;
+      border-radius: 8px;
+      box-shadow: 0 0 10px rgba(0,0,0,0.2);
+    }
+    #controls button {
+      margin: 4px;
+      padding: 4px 10px;
+    }
+  </style>
+</head>
+<body>
+  <div id="controls">
+    <button id="exportBtn">Export Markers</button>
+    <button id="importBtn">Import Markers</button>
+    <input type="file" id="fileInput" style="display:none;" />
+  </div>
+  <div id="map"></div>
+
+
+
+
+  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+  <script>
+
+const iconUrls = {
+  'POIs': 'https://maps.google.com/mapfiles/ms/icons/blue-dot.png',
+  'Enemy Camps': 'https://maps.google.com/mapfiles/ms/icons/red-dot.png',
+  'Loot Spots': 'https://maps.google.com/mapfiles/ms/icons/green-dot.png',
+  'Cave Entrance': 'https://maps.google.com/mapfiles/ms/icons/orange-dot.png',
+};
+
+function getIcon(category) {
+  return L.icon({
+    iconUrl: iconUrls[category] || iconUrls['POIs'], // default to POIs icon if unknown
+    iconSize: [32, 32],
+    iconAnchor: [16, 32],
+    popupAnchor: [0, -32],
+  });
+}
+    const map = L.map('map', {
+      crs: L.CRS.Simple,
+      minZoom: -2
+    });
+
+    const bounds = [[0, 0], [1080, 1920]];
+    const image = L.imageOverlay('f-map.jpg', bounds).addTo(map);
+    map.fitBounds(bounds);
+
+    let savedMarkers = JSON.parse(localStorage.getItem('markers')) || [];
+
+    function saveMarkers() {
+      localStorage.setItem('markers', JSON.stringify(savedMarkers));
+    }
+
+function addMarker(latlng, note, category = 'POIs') {
+  const marker = L.marker(latlng, { icon: getIcon(category) }).addTo(map);
+  marker.bindPopup(`<b>${category}</b><br>${note}`);
+
+  marker.on('contextmenu', function () {
+    const confirmDelete = confirm("Delete this marker?");
+    if (confirmDelete) {
+      map.removeLayer(marker);
+      savedMarkers = savedMarkers.filter(m =>
+        m.latlng.lat !== latlng.lat || m.latlng.lng !== latlng.lng || m.category !== category
+      );
+      saveMarkers();
+    }
+  });
+}
+
+    savedMarkers.forEach(m => addMarker(m.latlng, m.note));
+
+   map.on('click', function(e) {
+  const category = prompt("Enter category (POIs, Enemy Camps, Loot Spots, Cave Entrance):", "POIs");
+  if (!category || !iconUrls.hasOwnProperty(category)) {
+    alert("Invalid category! Marker not added.");
+    return;
+  }
+  
+  const note = prompt("Enter note for this marker:");
+  if (!note) return;
+
+  const latlng = e.latlng;
+  savedMarkers.push({ latlng, note, category });
+  saveMarkers();
+  addMarker(latlng, note, category);
+});
+
+
+    // Export Markers
+    document.getElementById('exportBtn').onclick = function() {
+      const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(savedMarkers));
+      const dlAnchorElem = document.createElement('a');
+      dlAnchorElem.setAttribute("href", dataStr);
+      dlAnchorElem.setAttribute("download", "sons-map-markers.json");
+      dlAnchorElem.click();
+    };
+
+    // Import Markers
+    document.getElementById('importBtn').onclick = function() {
+      document.getElementById('fileInput').click();
+    };
+
+    document.getElementById('fileInput').addEventListener('change', function() {
+      const file = this.files[0];
+      const reader = new FileReader();
+reader.onload = function(e) {
+  try {
+    const importedMarkers = JSON.parse(e.target.result);
+    if (Array.isArray(importedMarkers)) {
+
+      // Deduplicate based on rounded lat/lng string key
+      const existingKeys = new Set(
+        savedMarkers.map(m => `${m.latlng.lat.toFixed(5)},${m.latlng.lng.toFixed(5)}`)
+      );
+
+      importedMarkers.forEach(m => {
+        const key = `${m.latlng.lat.toFixed(5)},${m.latlng.lng.toFixed(5)}`;
+        if (!existingKeys.has(key)) {
+          savedMarkers.push(m);
+          existingKeys.add(key); // Add to avoid future duplicates
+        }
+      });
+
+      saveMarkers();
+
+      // Clear all current markers
+      map.eachLayer(function(layer) {
+        if (layer instanceof L.Marker) {
+          map.removeLayer(layer);
+        }
+      });
+
+      // Re-add updated markers
+savedMarkers.forEach(m => addMarker(m.latlng, m.note, m.category || 'POIs'));
+
+
+      alert("Markers imported and merged successfully!");
+    } else {
+      alert("Invalid marker data.");
+    }
+  } catch (err) {
+    alert("Error reading file: " + err.message);
+  }
+};
+      reader.readAsText(file);
+    });
+  </script>
+</body>
+</html>
